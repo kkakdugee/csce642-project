@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install ".[dev]"
+
+      - name: Run tests
+        run: python -W error -m unittest discover -s tests -v
+
+      - name: Check lint and complexity
+        run: python -m ruff check .
+
+      - name: Check formatting
+        run: python -m ruff format --check .

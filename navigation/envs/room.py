@@ -36,21 +36,36 @@ class RoomEnv(gym.Env):
     ):
         super().__init__()
         self.grid_shape = tuple(operator.index(n) for n in grid_shape)
-        if len(self.grid_shape) not in (2, 3):
+        dimensions = len(self.grid_shape)
+        if dimensions not in (2, 3):
             raise ValueError("grid_shape must have two or three axes.")
         if min(self.grid_shape) < 2:
-            raise ValueError("Each grid_shape entry must be an integer of at least two.")
+            raise ValueError(
+                "Each grid_shape entry must be an integer of at least two."
+            )
+
         self.step_size = float(step_size)
         displacement_space = spaces.Box(
-            -self.step_size, self.step_size, shape=(len(self.grid_shape),), dtype=np.float32
+            -self.step_size,
+            self.step_size,
+            shape=(dimensions,),
+            dtype=np.float32,
         )
-        if not 0 < displacement_space.high[0] < np.inf:
-            raise ValueError("step_size must be finite, positive and representable in float32.")
+        # Check the value after Gymnasium converts it to the observation dtype.
+        step_as_float32 = displacement_space.high[0]
+        if not 0 < step_as_float32 < np.inf:
+            raise ValueError(
+                "step_size must be finite, positive and representable in float32."
+            )
+
         bounds = (np.asarray(self.grid_shape) - 1) * self.step_size
         if not np.all(np.isfinite(bounds)):
             raise ValueError("Room bounds must be finite.")
         if not 0 < goal_radius < np.linalg.norm(bounds):
-            raise ValueError("goal_radius must be positive and smaller than the room diagonal.")
+            raise ValueError(
+                "goal_radius must be positive and smaller than the room diagonal."
+            )
+
         self.max_episode_steps = operator.index(max_episode_steps)
         if isinstance(max_episode_steps, bool) or self.max_episode_steps < 1:
             raise ValueError("max_episode_steps must be a positive integer.")
@@ -61,7 +76,8 @@ class RoomEnv(gym.Env):
         self.goal_radius = float(goal_radius)
         self.goal_reward = float(goal_reward)
         self.step_penalty = float(step_penalty)
-        self.action_space = spaces.Discrete(2 * len(self.grid_shape))
+
+        self.action_space = spaces.Discrete(2 * dimensions)
         self.observation_space = spaces.Dict(
             {
                 "displacement": displacement_space,
@@ -79,8 +95,11 @@ class RoomEnv(gym.Env):
         """
         super().reset(seed=seed)
         options = {} if options is None else options
-        if options.keys() - {"start_cell", "goal_cell"}:
-            raise ValueError("Supported reset options are 'start_cell' and 'goal_cell'.")
+        unknown_options = options.keys() - {"start_cell", "goal_cell"}
+        if unknown_options:
+            raise ValueError(
+                "Supported reset options are 'start_cell' and 'goal_cell'."
+            )
         start = self._parse_cell(options.get("start_cell"))
         goal = self._parse_cell(options.get("goal_cell"))
         self._cell, self._goal_cell = self._sample_task(start, goal)
@@ -94,25 +113,36 @@ class RoomEnv(gym.Env):
 
     def step(self, action):
         if self._needs_reset:
-            raise ResetNeeded("Call reset() before stepping or after an episode finishes.")
+            raise ResetNeeded(
+                "Call reset() before stepping or after an episode finishes."
+            )
         if not self.action_space.contains(action):
             raise ValueError(f"Invalid action: {action!r}")
         action = int(action)
         next_cell = move_cell(self._cell, action, self.grid_shape)
-        displacement = ((next_cell - self._cell) * self.step_size).astype(np.float32)
+        cell_displacement = next_cell - self._cell
+        displacement = cell_displacement * self.step_size
+        displacement = displacement.astype(np.float32)
         self._cell = next_cell
         self._elapsed_steps += 1
+
         terminated = self._at_goal(self._cell, self._goal_cell)
         truncated = self._elapsed_steps >= self.max_episode_steps and not terminated
         self._needs_reset = terminated or truncated
-        reward = -self.step_penalty + (self.goal_reward if terminated else 0.0)
+
+        goal_bonus = 0.0
+        if terminated:
+            goal_bonus = self.goal_reward
+        reward = goal_bonus - self.step_penalty
+
         observation = {"displacement": displacement, "previous_action": action}
         return observation, reward, terminated, truncated, self._info(terminated)
 
     def _parse_cell(self, cell):
         if cell is None:
             return None
-        cell = np.array([operator.index(n) for n in cell], dtype=np.int64)
+        coordinates = [operator.index(n) for n in cell]
+        cell = np.array(coordinates, dtype=np.int64)
         if cell.shape != (len(self.grid_shape),):
             raise ValueError("Cell must have one integer index per axis.")
         if np.any(cell < 0) or np.any(cell >= self.grid_shape):
@@ -129,10 +159,17 @@ class RoomEnv(gym.Env):
 
     def _sample_task(self, start, goal):
         """Sample grid positions, excluding tasks already inside the goal."""
-        attempts = 1 if start is not None and goal is not None else 1000
+        both_fixed = start is not None and goal is not None
+        attempts = 1 if both_fixed else 1000
         for _ in range(attempts):
-            start_cell = self.np_random.integers(self.grid_shape) if start is None else start
-            goal_cell = self.np_random.integers(self.grid_shape) if goal is None else goal
+            start_cell = start
+            if start_cell is None:
+                start_cell = self.np_random.integers(self.grid_shape)
+
+            goal_cell = goal
+            if goal_cell is None:
+                goal_cell = self.np_random.integers(self.grid_shape)
+
             if not self._at_goal(start_cell, goal_cell):
                 return start_cell, goal_cell
         raise ValueError(

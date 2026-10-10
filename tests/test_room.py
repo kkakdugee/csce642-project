@@ -17,26 +17,42 @@ class RoomEnvTests(unittest.TestCase):
                 observation, info = env.reset(seed=19)
                 self.assertEqual(set(observation), {"displacement", "previous_action"})
                 self.assertEqual(observation["displacement"].dtype, np.float32)
-                np.testing.assert_array_equal(observation["displacement"], np.zeros(dimensions))
+                np.testing.assert_array_equal(
+                    observation["displacement"], np.zeros(dimensions)
+                )
                 self.assertEqual(observation["previous_action"], 2 * dimensions)
                 self.assertTrue(env.observation_space.contains(observation))
-                self.assertEqual(set(info), {"position", "goal", "elapsed_steps", "is_success"})
+                self.assertEqual(
+                    set(info), {"position", "goal", "elapsed_steps", "is_success"}
+                )
                 self.assertEqual(info["position"].dtype, np.float64)
                 self.assertEqual(info["goal"].dtype, np.float64)
                 self.assertEqual(info["elapsed_steps"], 0)
                 self.assertFalse(info["is_success"])
 
     def test_all_axis_actions_and_physical_step_size(self):
-        moves = ((0.5, 0, 0), (-0.5, 0, 0), (0, 0.5, 0), (0, -0.5, 0), (0, 0, 0.5), (0, 0, -0.5))
+        moves = (
+            (0.5, 0, 0),
+            (-0.5, 0, 0),
+            (0, 0.5, 0),
+            (0, -0.5, 0),
+            (0, 0, 0.5),
+            (0, 0, -0.5),
+        )
         for dimensions in (2, 3):
             env = RoomEnv(grid_shape=(5,) * dimensions, step_size=0.5)
             for action, move in enumerate(moves[: 2 * dimensions]):
                 with self.subTest(dimensions=dimensions, action=action):
                     start = np.full(dimensions, 2, dtype=np.int64)
-                    env.reset(options={"start_cell": start, "goal_cell": [4] * dimensions})
+                    env.reset(
+                        options={"start_cell": start, "goal_cell": [4] * dimensions}
+                    )
                     observation, reward, terminated, truncated, info = env.step(action)
-                    np.testing.assert_array_equal(observation["displacement"], move[:dimensions])
-                    np.testing.assert_array_equal(info["position"], start * 0.5 + move[:dimensions])
+                    expected_position = start * 0.5 + move[:dimensions]
+                    np.testing.assert_array_equal(
+                        observation["displacement"], move[:dimensions]
+                    )
+                    np.testing.assert_array_equal(info["position"], expected_position)
                     self.assertEqual(observation["previous_action"], action)
                     self.assertEqual(reward, -0.01)
                     self.assertFalse(terminated or truncated)
@@ -44,7 +60,11 @@ class RoomEnvTests(unittest.TestCase):
 
     def test_rejected_wall_move_counts_as_step_and_reports_zero_movement(self):
         env = RoomEnv(grid_shape=(5, 5))
-        for start, goal, action in (([0, 0], [4, 4], 1), ([4, 4], [0, 0], 0)):
+        boundary_cases = (
+            ([0, 0], [4, 4], 1),
+            ([4, 4], [0, 0], 0),
+        )
+        for start, goal, action in boundary_cases:
             with self.subTest(action=action):
                 env.reset(options={"start_cell": start, "goal_cell": goal})
                 observation, reward, terminated, truncated, info = env.step(action)
@@ -64,7 +84,9 @@ class RoomEnvTests(unittest.TestCase):
                 np.testing.assert_array_equal(cell, [0, 0])
 
     def test_success_on_last_step_takes_precedence_over_timeout(self):
-        env = RoomEnv(grid_shape=(3, 3), max_episode_steps=2, goal_reward=2.0, step_penalty=0.1)
+        env = RoomEnv(
+            grid_shape=(3, 3), max_episode_steps=2, goal_reward=2.0, step_penalty=0.1
+        )
         env.reset(options={"start_cell": [0, 0], "goal_cell": [2, 0]})
         _, reward, terminated, truncated, _ = env.step(0)
         self.assertEqual(reward, -0.1)
@@ -77,7 +99,9 @@ class RoomEnvTests(unittest.TestCase):
         self.assertEqual(info["elapsed_steps"], 2)
         with self.assertRaises(gym.error.ResetNeeded):
             env.step(0)
-        observation, info = env.reset(options={"start_cell": [0, 0], "goal_cell": [2, 2]})
+        observation, info = env.reset(
+            options={"start_cell": [0, 0], "goal_cell": [2, 2]}
+        )
         self.assertEqual(info["elapsed_steps"], 0)
         self.assertFalse(info["is_success"])
         self.assertEqual(observation["previous_action"], 4)
@@ -145,9 +169,13 @@ class RoomEnvTests(unittest.TestCase):
         )
         for option, info_key in (("start_cell", "position"), ("goal_cell", "goal")):
             with self.subTest(option=option):
-                _, info = env.reset(seed=7, options={option: np.array([1, 2], dtype=np.int64)})
+                _, info = env.reset(
+                    seed=7, options={option: np.array([1, 2], dtype=np.int64)}
+                )
                 np.testing.assert_array_equal(info[info_key], [0.5, 1])
-                self.assertGreater(np.linalg.norm(info["position"] - info["goal"]), 0.25)
+                self.assertGreater(
+                    np.linalg.norm(info["position"] - info["goal"]), 0.25
+                )
 
     def test_sampling_rejects_fixed_cell_with_no_separate_partner(self):
         env = RoomEnv(grid_shape=(3, 3), goal_radius=1.5)
@@ -158,17 +186,21 @@ class RoomEnvTests(unittest.TestCase):
 
     def test_inputs_and_returned_arrays_cannot_mutate_simulator_state(self):
         env = RoomEnv(grid_shape=(5, 5))
-        start, goal = np.array([0, 0], dtype=np.int64), np.array([4, 4], dtype=np.int64)
+        start = np.array([0, 0], dtype=np.int64)
+        goal = np.array([4, 4], dtype=np.int64)
         observation, info = env.reset(options={"start_cell": start, "goal_cell": goal})
-        start[:] = goal[:] = 3
+        start[:] = 3
+        goal[:] = 3
         observation["displacement"][:] = 8
-        info["position"][:] = info["goal"][:] = 2
+        info["position"][:] = 2
+        info["goal"][:] = 2
         observation, _, _, _, info = env.step(0)
         np.testing.assert_array_equal(info["position"], [1, 0])
         np.testing.assert_array_equal(info["goal"], [4, 4])
         np.testing.assert_array_equal(observation["displacement"], [1, 0])
         observation["displacement"][:] = 8
-        info["position"][:] = info["goal"][:] = 2
+        info["position"][:] = 2
+        info["goal"][:] = 2
         observation, _, _, _, info = env.step(2)
         np.testing.assert_array_equal(info["position"], [1, 1])
         np.testing.assert_array_equal(info["goal"], [4, 4])

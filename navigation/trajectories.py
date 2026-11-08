@@ -17,13 +17,15 @@ def generate_batch(
     batch_size: int,
     sequence_length: int,
     rng: np.random.Generator,
-) -> dict[str, NDArray[np.float32]]:
+    include_positions: bool = False,
+) -> dict[str, NDArray[np.floating]]:
     """Return initial_code (B,N), displacements (B,T,D) and targets (B,T,N).
 
     Starts and attempted axial actions are uniform. Rejected wall moves remain
     zero-displacement steps. Target t encodes the position after displacement t.
     Walks have no goals, rewards or early termination. Use separate generators
     for training and validation while sharing the same place-cell population.
+    For validation, include_positions adds the true post-move coordinates (B,T,D).
     All sizes, physical units and sampling generators are explicit; this
     function does not select an experimental protocol.
     """
@@ -36,11 +38,7 @@ def generate_batch(
 
     step_size = float(step_size)
     largest_float32 = np.finfo(np.float32).max
-    if not 0 < step_size <= largest_float32:
-        raise ValueError(
-            "step_size must be finite, positive and representable in float32."
-        )
-    if np.float32(step_size) == 0:
+    if not 0 < step_size <= largest_float32 or np.float32(step_size) == 0:
         raise ValueError(
             "step_size must be finite, positive and representable in float32."
         )
@@ -77,8 +75,11 @@ def generate_batch(
     displacements = cell_displacements * step_size
     displacements = displacements.astype(np.float32)
 
-    return {
+    batch = {
         "initial_code": codes[:, 0],
         "displacements": displacements,
         "targets": codes[:, 1:],
     }
+    if include_positions:
+        batch["positions"] = positions[:, 1:]
+    return batch

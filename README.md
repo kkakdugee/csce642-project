@@ -22,3 +22,16 @@ env.close()
 
 The [position network](navigation/position_network.py) takes a starting cue
 and a sequence of displacements and predicts place-cell activity at each step.
+
+## Position-network pretraining
+
+```sh
+python -m navigation.pretrain --grid-shape 5 5 --output runs/position-2d.pt
+python -m navigation.pretrain --grid-shape 5 5 5 --output runs/position-3d.pt
+```
+
+Each CPU run trains on the starting cue and subsequent moves. It reports
+held-out cross-entropy and mean distance to the true position after each move.
+The decoder averages the place-cell centers weighted by predicted probabilities.
+Use `--help` for settings. `navigation.pretrain.load_checkpoint(path)` returns
+the trained model, place-cell population, and configuration.

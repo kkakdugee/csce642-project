@@ -28,19 +28,22 @@ class PositionNetwork(nn.Module):
 
     def step(self, displacement: Tensor, state: Tensor) -> tuple[Tensor, Tensor]:
         """Advance one (batch, dimensions) move. Return new state and prediction."""
-        # RNN takes a time axis on inputs and a layer axis on the initial state.
-        sequence = displacement.unsqueeze(1)
-        activity, _ = self.recurrent(sequence, state.unsqueeze(0))
+        activity = self.sequence_activity(displacement.unsqueeze(1), state)
         next_state = activity[:, 0]
         return next_state, self.predict_place_cells(next_state)
+
+    def sequence_activity(self, displacements: Tensor, state: Tensor) -> Tensor:
+        """Return the hidden state after each move, before applying the readout."""
+        if displacements.ndim != 3:
+            raise ValueError("displacements must have shape (batch, time, dimensions).")
+        # PyTorch expects a layer axis on the initial state.
+        activity, _ = self.recurrent(displacements, state.unsqueeze(0))
+        return activity
 
     def forward(
         self, initial_code: Tensor, displacements: Tensor
     ) -> tuple[Tensor, Tensor]:
         """Return activity (B, T, hidden_size) and predictions (B, T, n_cells)."""
-        if displacements.ndim != 3:
-            raise ValueError("displacements must have shape (batch, time, dimensions).")
         state = self.initial_state(initial_code)
-        # Output t describes the position after displacement t, as in generate_batch.
-        activity, _ = self.recurrent(displacements, state.unsqueeze(0))
+        activity = self.sequence_activity(displacements, state)
         return activity, self.predict_place_cells(activity)
